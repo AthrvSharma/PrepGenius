@@ -1,0 +1,104 @@
+PrepGenius — Project Overview
+
+What this is
+PrepGenius is a full‑stack AI interview preparation platform. It helps users practice technical interviews, analyze resumes, track progress, and follow personalized learning plans. The app combines a modern React dashboard with a local JSON data layer and an AI service layer that can use local models (Ollama) or remote providers.
+
+Core functionality
+1) Mock Interviews
+- Select domain and difficulty, answer questions, receive rubric‑based feedback.
+- Interview sessions are recorded and used for scoring, reports, and analytics.
+
+2) Resume Analyzer
+- Upload or select resumes and get ATS‑style scoring and detailed feedback.
+- AI produces strengths, risks, missing keywords, and improvement actions.
+
+3) Roadmap Generator
+- Generates a personalized learning roadmap based on user profile and progress.
+- Roadmap includes phases, weekly plan, next actions, and goals.
+
+4) Coding Practice
+- A practice environment similar to coding platforms with problems, editor, and testcases.
+- Supports multiple languages with templates and structured test execution.
+
+5) Question Bank & Learning Hub
+- Large curriculum dataset (subjects, topics, definitions, examples) for structured learning.
+- Question bank supports tags, difficulty, rubric, and domain.
+
+6) Analytics & Progress
+- Dashboard summary, performance trends, strengths/weaknesses, domain scores.
+- Practice and interview history surfaced for continuous improvement.
+
+How it works (High level flow)
+- Frontend (React + Vite + Tailwind) renders the UI and handles user flow.
+- Local JSON data (src/data/db.json) acts as a lightweight database.
+- The app uses a “blink” data layer abstraction to read/write collections.
+- AI features call a local AI service in server/index.js via /api/ai.
+- The AI service can route to:
+  - Local LLMs via Ollama (OPENAI_BASE_URL=http://localhost:11434/v1)
+  - Remote OpenAI‑style endpoints
+- Responses are parsed/validated and saved in JSON DB.
+
+AI integration
+- A single /api/ai endpoint powers multiple actions:
+  generateHint, explainConcept, evaluateAnswer, finalReport,
+  resumeAnalysis, jobMatchAnalysis, dashboardInsights, generateRoadmap.
+- Each action uses structured prompts and expects JSON responses.
+- Parsing is resilient: JSON extraction + repair pass when needed.
+- Caching, rate limiting, timeouts, and retries are implemented server‑side.
+
+Data model (summary)
+Key collections (in db.json via blink data layer):
+- users / userProfiles
+- resumes
+- interviewQuestions / questionBank
+- interviewSessions / feedbackReports
+- roadmaps
+- codingProblems / codingSubmissions
+- jobMatches
+- learningHub / curriculum
+
+Tech stack
+Frontend
+- React 18 + Vite
+- TypeScript
+- Tailwind CSS + custom utilities
+- Framer Motion (animations)
+- shadcn/ui components
+- React Router
+
+Backend
+- Node.js + Express
+- AI routing via OpenAI‑compatible chat API
+- Local model support via Ollama
+- Custom JSON parsing/repair, caching, rate limiting
+
+Infra / tooling
+- Local JSON database in src/data/db.json
+- Vite dev server
+- Environment variables in .env
+
+Setup (typical)
+1) Install dependencies
+   npm install
+
+2) Configure .env
+   - OPENAI_API_KEY (if using remote models)
+   - OPENAI_BASE_URL=http://localhost:11434/v1 (for Ollama)
+   - OPENAI_MODEL / OPENAI_MODEL_FAST
+   - VITE_AI_BASE_URL=http://localhost:8787 (or your AI server port)
+
+3) Run
+   - AI server: node server/index.js
+   - Frontend: npm run dev
+
+Notes
+- For local models, ensure “ollama serve” is running and the model is pulled.
+- The system supports using a fast model for general features and a larger model for resume/roadmap.
+
+Project intent
+PrepGenius is designed to feel like a real interview prep product:
+- Structured learning + practice
+- AI‑powered evaluations
+- Clear analytics and roadmaps
+- Modern UI with animations and micro‑interactions
+
