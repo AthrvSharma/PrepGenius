@@ -594,6 +594,201 @@ function normalizeJobMatch(raw = {}) {
   return normalized
 }
 
+function buildFallbackEvaluation() {
+  return normalizeEvaluation({
+    score: 0,
+    confidence: 0,
+    breakdown: {
+      correctness: 0,
+      conceptCoverage: 0,
+      clarity: 0,
+      depth: 0,
+      communication: 0,
+      total: 0,
+    },
+    strengths: [],
+    weaknesses: [],
+    mistakesFound: [],
+    missingConcepts: [],
+    coverage: [],
+    improvements: ['Answer with structure: assumptions, approach, edge cases, complexity.'],
+    idealAnswer: '',
+    nextSteps: [
+      'State assumptions first.',
+      'Walk through one concrete example.',
+      'Call out complexity and trade-offs.',
+    ],
+    followUp: 'Can you explain your approach step-by-step?',
+    isUncertain: true,
+  })
+}
+
+function buildFallbackRoadmap(payload = {}) {
+  const focusAreas = sanitizeArray(payload?.focusAreas || [])
+  const experienceLevel = sanitize(payload?.experienceLevel || 'Intermediate')
+  const targetRole = sanitize(payload?.targetRole || 'Interview readiness')
+
+  return {
+    summary: 'Personalized roadmap is temporarily unavailable. Using a safe starter plan.',
+    currentLevel: experienceLevel || 'Intermediate',
+    primaryGoal: targetRole || 'Interview readiness',
+    phases: [
+      {
+        title: 'Foundation',
+        duration: '2 weeks',
+        objective: 'Build a daily interview-prep rhythm.',
+        focusDomains: focusAreas,
+        actions: [
+          'Solve 3 easy problems daily.',
+          'Do one mock interview per week.',
+          'Review one weak concept every day.',
+        ],
+        progress: 20,
+      },
+      {
+        title: 'Depth',
+        duration: '3 weeks',
+        objective: 'Improve explanation quality and medium-level solving.',
+        focusDomains: focusAreas,
+        actions: [
+          'Solve 4 medium problems per week.',
+          'Write short time/space analysis after each solution.',
+          'Practice one system-design prompt weekly.',
+        ],
+        progress: 45,
+      },
+      {
+        title: 'Readiness',
+        duration: '2 weeks',
+        objective: 'Simulate interviews and close final gaps.',
+        focusDomains: focusAreas,
+        actions: [
+          'Complete 2 timed mocks per week.',
+          'Retry failed questions with improved explanations.',
+          'Refine resume/project impact bullets.',
+        ],
+        progress: 70,
+      },
+    ],
+    weeklyPlan: [
+      {
+        week: 'Week 1',
+        focus: focusAreas,
+        tasks: ['Warm-up problems', 'Mock interview', 'Weak-area review'],
+      },
+    ],
+    nextActions: [
+      'Complete one timed mock interview.',
+      'Solve 3 easy + 1 medium problem.',
+      'Review one weak concept from your last report.',
+    ],
+  }
+}
+
+function buildFallbackFinalReport(evaluations = []) {
+  const validScores = Array.isArray(evaluations)
+    ? evaluations
+      .map((item) => Number(item?.score))
+      .filter((score) => Number.isFinite(score))
+    : []
+  const totalScore = validScores.length
+    ? Math.round(validScores.reduce((sum, score) => sum + score, 0) / validScores.length)
+    : 0
+
+  return {
+    totalScore,
+    strengths: [],
+    weaknesses: [],
+    recommendations: [
+      'Use a clear structure in answers.',
+      'Explain trade-offs and complexity.',
+      'Practice one timed mock session this week.',
+    ],
+  }
+}
+
+function buildActionFallback(action, payload = {}) {
+  const focusAreas = sanitizeArray(payload?.focusAreas || [])
+
+  switch (action) {
+    case 'generateText':
+      return { text: 'AI response is temporarily unavailable. Please retry in a moment.' }
+    case 'generateHint':
+      return { hint: 'Start with assumptions, then explain approach and one edge case.' }
+    case 'explainConcept':
+      return { explanation: 'Define the concept, explain how it works, and mention one trade-off.' }
+    case 'evaluateAnswer':
+      return buildFallbackEvaluation()
+    case 'finalReport':
+      return buildFallbackFinalReport(payload?.evaluations || [])
+    case 'resumeAnalysis':
+      return normalizeResumeAnalysis({
+        atsScore: 0,
+        keywordMatchScore: 0,
+        formattingScore: 0,
+        readabilityScore: 0,
+        impactScore: 0,
+        roleFitScore: 0,
+        atsCompatibilityScore: 0,
+        sectionCompletenessScore: 0,
+        impactDensity: 0,
+        summary: 'AI analysis is temporarily unavailable.',
+        strengths: [],
+        weaknesses: [],
+        improvements: ['Add quantified impact and role-aligned keywords.'],
+        recommendations: ['Retry analysis after a moment.'],
+      })
+    case 'jobMatchAnalysis':
+      return normalizeJobMatch({
+        matchScore: 0,
+        keywordCoverage: 0,
+        roleFitScore: 0,
+        experienceScore: 0,
+        summary: 'AI job match is temporarily unavailable.',
+        matchedSkills: [],
+        missingSkills: [],
+        recommendedKeywords: [],
+        nextSteps: ['Retry analysis after a moment.'],
+      })
+    case 'dashboardInsights':
+      return {
+        learningPlan: focusAreas.slice(0, 3).map((focus, index) => ({
+          title: `Focus Block ${index + 1}`,
+          focus,
+          difficulty: 'Medium',
+          duration: '30 min',
+          progress: 0,
+          why: 'Fallback plan while AI insights are temporarily unavailable.',
+        })),
+        dailyChallenge: {
+          title: 'Structured Answer Drill',
+          description: 'Answer one interview question using assumptions, approach, and edge cases.',
+          difficulty: 'Medium',
+          duration: '20 min',
+          successCriteria: [
+            'State assumptions clearly',
+            'Explain approach step-by-step',
+            'Mention complexity and one edge case',
+          ],
+        },
+      }
+    case 'generateRoadmap':
+      return buildFallbackRoadmap(payload)
+    case 'coachSummary':
+      return {
+        summary: 'AI coach summary is temporarily unavailable. Continue targeted practice.',
+        focusAreas: sanitizeArray(payload?.weaknesses || []).slice(0, 3),
+        nextSteps: [
+          'Complete one timed mock interview.',
+          'Review your top weak area for 30 minutes.',
+          'Retry two previously missed questions.',
+        ],
+      }
+    default:
+      return null
+  }
+}
+
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true })
 })
@@ -689,7 +884,7 @@ Return JSON:
 
       const parsed = await parseOrRepair(content, 'hint')
       if (!parsed) {
-        return res.status(500).json({ error: 'Failed to parse AI response' })
+        throw new Error('Failed to parse AI response')
       }
 
       return res.json({
@@ -727,7 +922,7 @@ Return JSON:
 
       const parsed = await parseOrRepair(content, 'explanation')
       if (!parsed) {
-        return res.status(500).json({ error: 'Failed to parse AI response' })
+        throw new Error('Failed to parse AI response')
       }
 
       return res.json({
@@ -815,7 +1010,7 @@ Return JSON with this schema:
 
       const parsed = await parseOrRepair(content, 'evaluation')
       if (!parsed) {
-        return res.status(500).json({ error: 'Failed to parse AI response' })
+        throw new Error('Failed to parse AI response')
       }
 
       return res.json({ data: normalizeEvaluation(parsed) })
@@ -847,7 +1042,7 @@ Return JSON:
 
       const parsed = await parseOrRepair(content, 'finalReport')
       if (!parsed) {
-        return res.status(500).json({ error: 'Failed to parse AI response' })
+        throw new Error('Failed to parse AI response')
       }
 
       if (cacheKey) setCache(cacheKey, parsed)
@@ -919,7 +1114,7 @@ Return JSON:
 
       const parsed = await parseOrRepair(content, 'resumeAnalysis')
       if (!parsed) {
-        return res.status(500).json({ error: 'Failed to parse AI response' })
+        throw new Error('Failed to parse AI response')
       }
 
       if (cacheKey) setCache(cacheKey, parsed)
@@ -970,7 +1165,7 @@ Return JSON:
 
       const parsed = await parseOrRepair(content, 'jobMatchAnalysis')
       if (!parsed) {
-        return res.status(500).json({ error: 'Failed to parse AI response' })
+        throw new Error('Failed to parse AI response')
       }
 
       if (cacheKey) setCache(cacheKey, parsed)
@@ -1039,7 +1234,7 @@ Return JSON:
 
       const parsed = await parseOrRepair(content, 'dashboardInsights')
       if (!parsed) {
-        return res.status(500).json({ error: 'Failed to parse AI response' })
+        throw new Error('Failed to parse AI response')
       }
 
       if (cacheKey) setCache(cacheKey, parsed)
@@ -1211,63 +1406,7 @@ Return JSON:
 
       const parsed = await parseOrRepair(content, 'coachSummary')
       if (!parsed) {
-        return res.json({
-          data: {
-            summary: 'Personalized roadmap is being refined. Please try updating once more.',
-            currentLevel: payload?.experienceLevel || 'Intermediate',
-            primaryGoal: payload?.targetRole || 'Interview readiness',
-            phases: [
-              {
-                title: 'Foundation',
-                duration: '2 weeks',
-                objective: 'Strengthen core concepts and daily practice rhythm.',
-                focusDomains: payload?.focusAreas || [],
-                actions: [
-                  'Review fundamentals and solve 3 easy problems daily.',
-                  'Run one mock interview per week.',
-                  'Update resume bullet points with measurable impact.',
-                ],
-                progress: 20,
-              },
-              {
-                title: 'Depth & Fluency',
-                duration: '3 weeks',
-                objective: 'Improve medium-level problem solving and explanation skills.',
-                focusDomains: payload?.focusAreas || [],
-                actions: [
-                  'Solve 4 medium problems per week.',
-                  'Write concise solutions with time/space analysis.',
-                  'Schedule a weekly system design discussion.',
-                ],
-                progress: 40,
-              },
-              {
-                title: 'Interview Readiness',
-                duration: '2 weeks',
-                objective: 'Polish performance with timed mocks and targeted revisions.',
-                focusDomains: payload?.focusAreas || [],
-                actions: [
-                  'Do 2 timed mocks per week.',
-                  'Review weaknesses and retry failed questions.',
-                  'Finalize resume and role-specific projects.',
-                ],
-                progress: 60,
-              },
-            ],
-            weeklyPlan: [
-              {
-                week: 'Week 1',
-                focus: payload?.focusAreas || [],
-                tasks: ['Warm-up problems', 'Resume review', 'Mock interview'],
-              },
-            ],
-            nextActions: [
-              'Complete one mock interview.',
-              'Solve 3 easy + 1 medium problem.',
-              'Update one resume section with metrics.',
-            ],
-          },
-        })
+        throw new Error('Failed to parse AI response')
       }
 
       if (cacheKey) setCache(cacheKey, parsed)
@@ -1277,8 +1416,28 @@ Return JSON:
     logEvent('error', 'unsupported_action', { requestId, action })
     return res.status(400).json({ error: 'Unsupported action' })
   } catch (err) {
-    logEvent('error', 'ai_error', { requestId, action, error: err.message || err })
-    return res.status(500).json({ error: err.message || 'AI request failed' })
+    const fallback = buildActionFallback(action, payload || {})
+    const errorMessage = err?.message || String(err)
+    if (fallback) {
+      logEvent('error', 'ai_error_fallback', {
+        requestId,
+        action,
+        error: errorMessage,
+        durationMs: Date.now() - startTime,
+      })
+      return res.json({
+        data: fallback,
+        fallback: true,
+      })
+    }
+
+    logEvent('error', 'ai_error', {
+      requestId,
+      action,
+      error: errorMessage,
+      durationMs: Date.now() - startTime,
+    })
+    return res.status(500).json({ error: errorMessage || 'AI request failed' })
   }
 })
 
