@@ -1181,7 +1181,12 @@ Return JSON:
       const content = await callOpenAI([
         { role: 'system', content: system },
         { role: 'user', content: user },
-      ], { forceJson: true, retries: 1, maxTokens: 2600 })
+      ], {
+        model: process.env.OPENAI_MODEL_ACCURATE || process.env.OPENAI_MODEL,
+        forceJson: true,
+        retries: 1,
+        maxTokens: 2600,
+      })
 
       const parsed = await parseOrRepair(content, 'resumeAnalysis')
       if (!parsed) {
@@ -1232,7 +1237,12 @@ Return JSON:
       const content = await callOpenAI([
         { role: 'system', content: system },
         { role: 'user', content: user },
-      ], { forceJson: true, retries: 1, maxTokens: 1600 })
+      ], {
+        model: process.env.OPENAI_MODEL_ACCURATE || process.env.OPENAI_MODEL,
+        forceJson: true,
+        retries: 1,
+        maxTokens: 1600,
+      })
 
       const parsed = await parseOrRepair(content, 'jobMatchAnalysis')
       if (!parsed) {
@@ -1301,7 +1311,12 @@ Return JSON:
       const content = await callOpenAI([
         { role: 'system', content: system },
         { role: 'user', content: user },
-      ], { forceJson: true, retries: 1, maxTokens: 1200 })
+      ], {
+        model: process.env.OPENAI_MODEL_ACCURATE || process.env.OPENAI_MODEL,
+        forceJson: true,
+        retries: 1,
+        maxTokens: 1200,
+      })
 
       const parsed = await parseOrRepair(content, 'dashboardInsights')
       if (!parsed) {
@@ -1379,7 +1394,13 @@ Return JSON:
       const content = await callOpenAI([
         { role: 'system', content: system },
         { role: 'user', content: user },
-      ], { temperature: 0.1, forceJson: true, retries: 1, maxTokens: 2200 })
+      ], {
+        model: process.env.OPENAI_MODEL_ACCURATE || process.env.OPENAI_MODEL,
+        temperature: 0.1,
+        forceJson: true,
+        retries: 1,
+        maxTokens: 2200,
+      })
 
       let parsed = null
       try {
@@ -1473,7 +1494,13 @@ Return JSON:
       const content = await callOpenAI([
         { role: 'system', content: system },
         { role: 'user', content: user },
-      ], { temperature: 0.1, forceJson: true, retries: 1, maxTokens: 700 })
+      ], {
+        model: process.env.OPENAI_MODEL_ACCURATE || process.env.OPENAI_MODEL,
+        temperature: 0.1,
+        forceJson: true,
+        retries: 1,
+        maxTokens: 700,
+      })
 
       const parsed = await parseOrRepair(content, 'coachSummary')
       if (!parsed) {
