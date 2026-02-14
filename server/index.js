@@ -235,12 +235,15 @@ async function callOpenAI(messages, options = {}) {
     'gpt-4o'
   const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com'
   const isLocal = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1')
-  const responseFormatOverride = process.env.OPENAI_RESPONSE_FORMAT || ''
+  const isCloudflare = baseUrl.includes('api.cloudflare.com')
+  const responseFormatMode = (
+    process.env.OPENAI_RESPONSE_FORMAT ||
+    (isCloudflare ? 'off' : '')
+  ).trim().toLowerCase()
   const useResponseFormat =
     !isLocal &&
-    (options.forceJson ||
-      responseFormatOverride === 'json' ||
-      responseFormatOverride !== 'off')
+    responseFormatMode !== 'off' &&
+    (options.forceJson || responseFormatMode === 'json')
 
   if (!apiKey && !isLocal) {
     throw new Error('OPENAI_API_KEY is not set')
