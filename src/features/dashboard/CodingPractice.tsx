@@ -64,7 +64,10 @@ const formatTimeLimit = (timeLimitMs?: number) => {
   return `${seconds.toFixed(1)}s`
 }
 
-const API_BASE = (import.meta.env.VITE_AI_BASE_URL || '').replace(/\/$/, '')
+const API_BASE = (
+  import.meta.env.VITE_AI_BASE_URL ||
+  (typeof window !== 'undefined' ? window.location.origin : '')
+).replace(/\/$/, '')
 const LANGUAGES = [
   { value: 'javascript', label: 'JavaScript' },
   { value: 'python', label: 'Python' },
@@ -754,6 +757,16 @@ export function CodingPractice() {
 
   const selected = challenges.find((item) => item.id === selectedId) || null
 
+  const examplesToShow = useMemo<Array<{ input: string; output: string; explanation?: string }>>(() => {
+    if (!selected) return []
+    if (selected.examples?.length) return selected.examples
+    return selected.sampleTests.map((item) => ({
+      input: JSON.stringify(item.input),
+      output: JSON.stringify(item.output),
+      explanation: undefined,
+    }))
+  }, [selected])
+
   useEffect(() => {
     if (!selected) return
     const stored = drafts[selected.id]?.[language]
@@ -1119,10 +1132,7 @@ export function CodingPractice() {
                 ))}
               </div>
               <div className="space-y-3">
-                {(selected.examples?.length ? selected.examples : selected.sampleTests.map((item) => ({
-                  input: JSON.stringify(item.input),
-                  output: JSON.stringify(item.output),
-                }))).map((example, index) => (
+                {examplesToShow.map((example, index) => (
                   <div key={index} className="p-4 rounded-2xl bg-secondary/30 border border-border/20">
                     <p className="text-xs uppercase tracking-widest text-muted-foreground font-bold">Example {index + 1}</p>
                     <p className="text-xs text-muted-foreground">Input: {example.input}</p>

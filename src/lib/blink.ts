@@ -18,7 +18,10 @@ const DB_VERSION_KEY = 'prepgenius.db.version'
 const DB_VERSION = 6
 const AI_RATE_KEY = 'prepgenius.ai.rate'
 const AI_STATS_KEY = 'prepgenius.ai.stats'
-const AI_BASE_URL = (import.meta.env.VITE_AI_BASE_URL || '').replace(/\/$/, '')
+const AI_BASE_URL = (
+  import.meta.env.VITE_AI_BASE_URL ||
+  (typeof window !== 'undefined' ? window.location.origin : '')
+).replace(/\/$/, '')
 const AI_STRICT = import.meta.env.VITE_AI_STRICT === 'true'
 const AI_TIMEOUT_MS = Number(import.meta.env.VITE_AI_TIMEOUT_MS || 20000)
 
@@ -213,7 +216,7 @@ function parsePayload(prompt: string) {
 
 function pickQuestionFromBank(domain: string, index: number) {
   const db = loadDb()
-  const pool = db.questionBank.filter((question: QuestionBankEntry) => question.domain.toLowerCase() === domain.toLowerCase())
+  const pool = (db.questionBank as QuestionBankEntry[]).filter((question) => question.domain.toLowerCase() === domain.toLowerCase())
   if (!pool.length) return null
   return pool[index % pool.length]
 }
