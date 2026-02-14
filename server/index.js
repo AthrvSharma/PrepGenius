@@ -240,10 +240,12 @@ async function callOpenAI(messages, options = {}) {
     process.env.OPENAI_RESPONSE_FORMAT ||
     (isCloudflare ? 'off' : '')
   ).trim().toLowerCase()
+  const wantsStructuredOutput = options.forceJson || responseFormatMode === 'json'
+  const shouldDisableStructuredOutput = responseFormatMode === 'off' && !options.forceJson
   const useResponseFormat =
     !isLocal &&
-    responseFormatMode !== 'off' &&
-    (options.forceJson || responseFormatMode === 'json')
+    wantsStructuredOutput &&
+    !shouldDisableStructuredOutput
 
   if (!apiKey && !isLocal) {
     throw new Error('OPENAI_API_KEY is not set')
@@ -260,7 +262,20 @@ async function callOpenAI(messages, options = {}) {
     temperature: options.temperature ?? 0.2,
   }
   if (useResponseFormat) {
-    body.response_format = { type: 'json_object' }
+    if (isCloudflare) {
+      body.response_format = {
+        type: 'json_schema',
+        json_schema: {
+          name: 'structured_output',
+          schema: {
+            type: 'object',
+            additionalProperties: true,
+          },
+        },
+      }
+    } else {
+      body.response_format = { type: 'json_object' }
+    }
   }
 
   const maxRetries = Number(options.retries ?? 1)
@@ -285,7 +300,38 @@ async function callOpenAI(messages, options = {}) {
       }
 
       const data = await response.json()
-      return data.choices?.[0]?.message?.content || '{}'
+      const message = data?.choices?.[0]?.message || {}
+      if (message?.parsed && typeof message.parsed === 'object') {
+        return JSON.stringify(message.parsed)
+      }
+
+      const content = message?.content
+      if (typeof content === 'string') {
+        return content
+      }
+      if (Array.isArray(content)) {
+        const text = content
+          .map((part) => {
+            if (typeof part === 'string') return part
+            if (typeof part?.text === 'string') return part.text
+            if (typeof part?.content === 'string') return part.content
+            return ''
+          })
+          .filter(Boolean)
+          .join('\n')
+          .trim()
+        if (text) return text
+      }
+      if (content && typeof content === 'object') {
+        return JSON.stringify(content)
+      }
+      if (data?.response && typeof data.response === 'object') {
+        return JSON.stringify(data.response)
+      }
+      if (typeof data?.response === 'string') {
+        return data.response
+      }
+      return '{}'
     } catch (err) {
       lastError = err
       const message = isLocal
@@ -324,6 +370,12 @@ function tryParseJson(text) {
 }
 
 function parseJson(content) {
+  if (content && typeof content === 'object') {
+    return content
+  }
+  if (typeof content !== 'string') {
+    return null
+  }
   const normalized = normalizeJsonString(content)
   let parsed = tryParseJson(normalized)
   if (parsed) return parsed
@@ -640,8 +692,11 @@ Return JSON:
         return res.status(500).json({ error: 'Failed to parse AI response' })
       }
 
-      const normalized = normalizeEvaluation(parsed)
-      return res.json({ data: normalized })
+      return res.json({
+        data: {
+          hint: sanitize(parsed?.hint || parsed?.text || parsed?.explanation || ''),
+        },
+      })
     }
 
     if (action === 'explainConcept') {
@@ -675,7 +730,11 @@ Return JSON:
         return res.status(500).json({ error: 'Failed to parse AI response' })
       }
 
-      return res.json({ data: normalizeResumeAnalysis(parsed) })
+      return res.json({
+        data: {
+          explanation: sanitize(parsed?.explanation || parsed?.hint || parsed?.text || ''),
+        },
+      })
     }
 
     if (action === 'evaluateAnswer') {
@@ -759,7 +818,7 @@ Return JSON with this schema:
         return res.status(500).json({ error: 'Failed to parse AI response' })
       }
 
-      return res.json({ data: normalizeJobMatch(parsed) })
+      return res.json({ data: normalizeEvaluation(parsed) })
     }
 
     if (action === 'finalReport') {
@@ -864,7 +923,7 @@ Return JSON:
       }
 
       if (cacheKey) setCache(cacheKey, parsed)
-      return res.json({ data: parsed })
+      return res.json({ data: normalizeResumeAnalysis(parsed) })
     }
 
     if (action === 'jobMatchAnalysis') {
@@ -915,7 +974,7 @@ Return JSON:
       }
 
       if (cacheKey) setCache(cacheKey, parsed)
-      return res.json({ data: parsed })
+      return res.json({ data: normalizeJobMatch(parsed) })
     }
 
     if (action === 'dashboardInsights') {
