@@ -261,6 +261,14 @@ async function callOpenAI(messages, options = {}) {
     messages,
     temperature: options.temperature ?? 0.2,
   }
+  const maxTokens = Number(
+    options.maxTokens ??
+    process.env.OPENAI_MAX_TOKENS ??
+    0
+  )
+  if (Number.isFinite(maxTokens) && maxTokens > 0) {
+    body.max_tokens = Math.floor(maxTokens)
+  }
   if (useResponseFormat) {
     if (isCloudflare) {
       body.response_format = {
@@ -369,6 +377,57 @@ function tryParseJson(text) {
   }
 }
 
+function closeOpenJsonStructures(text) {
+  if (typeof text !== 'string' || !text) return text
+  const stack = []
+  let inString = false
+  let escaped = false
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (ch === '\\') {
+        escaped = true
+        continue
+      }
+      if (ch === '"') {
+        inString = false
+      }
+      continue
+    }
+
+    if (ch === '"') {
+      inString = true
+      continue
+    }
+    if (ch === '{') {
+      stack.push('}')
+      continue
+    }
+    if (ch === '[') {
+      stack.push(']')
+      continue
+    }
+    if (ch === '}' || ch === ']') {
+      if (!stack.length) continue
+      if (stack[stack.length - 1] === ch) {
+        stack.pop()
+      }
+    }
+  }
+
+  let output = text
+  if (inString) output += '"'
+  while (stack.length) {
+    output += stack.pop()
+  }
+  return output
+}
+
 function parseJson(content) {
   if (content && typeof content === 'object') {
     return content
@@ -379,6 +438,12 @@ function parseJson(content) {
   const normalized = normalizeJsonString(content)
   let parsed = tryParseJson(normalized)
   if (parsed) return parsed
+
+  const closed = closeOpenJsonStructures(normalized)
+  if (closed && closed !== normalized) {
+    parsed = tryParseJson(closed)
+    if (parsed) return parsed
+  }
 
   // Try to extract the first JSON object/array
   const arrayMatch = normalized.match(/\[[\s\S]*\]/)
@@ -426,14 +491,15 @@ function parseJson(content) {
 }
 
 async function repairJson(raw, schemaHint = '') {
+  const rawText = String(raw || '').slice(0, 12000)
   const system = `You are a JSON repair tool. Return ONLY valid JSON.`
-  const user = `Fix this into valid JSON${schemaHint ? ` for schema: ${schemaHint}` : ''}:\n${raw}`
+  const user = `Fix this into valid JSON${schemaHint ? ` for schema: ${schemaHint}` : ''}:\n${rawText}`
   const repaired = await callOpenAI(
     [
       { role: 'system', content: system },
       { role: 'user', content: user },
     ],
-    { temperature: 0, forceJson: true, retries: 1 }
+    { temperature: 0, forceJson: true, retries: 2, maxTokens: 1400 }
   )
   return parseJson(repaired)
 }
@@ -847,7 +913,7 @@ app.post('/api/ai', rateLimit, async (req, res) => {
       const content = await callOpenAI([
         { role: 'system', content: 'Return a concise plain-text response only.' },
         ...sanitizedMessages,
-      ], { temperature: 0.2, retries: 1 })
+      ], { temperature: 0.2, retries: 1, maxTokens: 500 })
 
       return res.json({ data: { text: content.replace(/^"|"$/g, '') } })
     }
@@ -880,7 +946,7 @@ Return JSON:
       const content = await callOpenAI([
         { role: 'system', content: system },
         { role: 'user', content: user },
-      ], { temperature: 0.1, forceJson: true, retries: 1 })
+      ], { temperature: 0.1, forceJson: true, retries: 1, maxTokens: 260 })
 
       const parsed = await parseOrRepair(content, 'hint')
       if (!parsed) {
@@ -918,7 +984,7 @@ Return JSON:
       const content = await callOpenAI([
         { role: 'system', content: system },
         { role: 'user', content: user },
-      ], { temperature: 0.1, forceJson: true, retries: 1 })
+      ], { temperature: 0.1, forceJson: true, retries: 1, maxTokens: 320 })
 
       const parsed = await parseOrRepair(content, 'explanation')
       if (!parsed) {
@@ -1006,7 +1072,7 @@ Return JSON with this schema:
       const content = await callOpenAI([
         { role: 'system', content: system },
         { role: 'user', content: user },
-      ], { temperature: 0.1, forceJson: true, retries: 1 })
+      ], { temperature: 0.1, forceJson: true, retries: 1, maxTokens: 1200 })
 
       const parsed = await parseOrRepair(content, 'evaluation')
       if (!parsed) {
@@ -1037,7 +1103,12 @@ Return JSON:
           { role: 'system', content: system },
           { role: 'user', content: user },
         ],
-        { model: process.env.OPENAI_MODEL_ACCURATE || process.env.OPENAI_MODEL, forceJson: true, retries: 1 }
+        {
+          model: process.env.OPENAI_MODEL_ACCURATE || process.env.OPENAI_MODEL,
+          forceJson: true,
+          retries: 1,
+          maxTokens: 800,
+        }
       )
 
       const parsed = await parseOrRepair(content, 'finalReport')
@@ -1110,7 +1181,7 @@ Return JSON:
       const content = await callOpenAI([
         { role: 'system', content: system },
         { role: 'user', content: user },
-      ], { forceJson: true, retries: 1 })
+      ], { forceJson: true, retries: 1, maxTokens: 2600 })
 
       const parsed = await parseOrRepair(content, 'resumeAnalysis')
       if (!parsed) {
@@ -1161,7 +1232,7 @@ Return JSON:
       const content = await callOpenAI([
         { role: 'system', content: system },
         { role: 'user', content: user },
-      ], { forceJson: true, retries: 1 })
+      ], { forceJson: true, retries: 1, maxTokens: 1600 })
 
       const parsed = await parseOrRepair(content, 'jobMatchAnalysis')
       if (!parsed) {
@@ -1230,7 +1301,7 @@ Return JSON:
       const content = await callOpenAI([
         { role: 'system', content: system },
         { role: 'user', content: user },
-      ], { forceJson: true, retries: 1 })
+      ], { forceJson: true, retries: 1, maxTokens: 1200 })
 
       const parsed = await parseOrRepair(content, 'dashboardInsights')
       if (!parsed) {
@@ -1308,7 +1379,7 @@ Return JSON:
       const content = await callOpenAI([
         { role: 'system', content: system },
         { role: 'user', content: user },
-      ], { temperature: 0.1, forceJson: true, retries: 1 })
+      ], { temperature: 0.1, forceJson: true, retries: 1, maxTokens: 2200 })
 
       let parsed = null
       try {
@@ -1402,7 +1473,7 @@ Return JSON:
       const content = await callOpenAI([
         { role: 'system', content: system },
         { role: 'user', content: user },
-      ], { temperature: 0.1, forceJson: true, retries: 1 })
+      ], { temperature: 0.1, forceJson: true, retries: 1, maxTokens: 700 })
 
       const parsed = await parseOrRepair(content, 'coachSummary')
       if (!parsed) {
@@ -1419,7 +1490,7 @@ Return JSON:
     const fallback = buildActionFallback(action, payload || {})
     const errorMessage = err?.message || String(err)
     if (fallback) {
-      logEvent('error', 'ai_error_fallback', {
+      logEvent('info', 'ai_fallback_used', {
         requestId,
         action,
         error: errorMessage,
