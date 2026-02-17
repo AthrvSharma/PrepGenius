@@ -121,17 +121,47 @@ export function InterviewSession({ sessionId, onComplete }: InterviewSessionProp
     return `${m}:${s.toString().padStart(2, '0')}`
   }
 
+  const readableError = (error: unknown) => {
+    if (!(error instanceof Error)) return 'Something went wrong. Please try again.'
+    const message = error.message || ''
+    try {
+      const parsed = JSON.parse(message)
+      if (typeof parsed?.error === 'string' && parsed.error.trim()) {
+        return parsed.error.trim()
+      }
+    } catch {
+      // Use raw message when not JSON
+    }
+    return message || 'Something went wrong. Please try again.'
+  }
+
   const handleSubmit = async () => {
-    if (!answer.trim() || interviewer.isProcessing || !interviewer.currentQuestion) return
+    if (interviewer.isProcessing || !interviewer.currentQuestion) return
+    if (!answer.trim()) {
+      toast.error('Please enter your answer before submitting.')
+      return
+    }
+
     const currentAnswer = answer
     setAnswer('')
-    const result = await interviewer.evaluateAnswer(currentAnswer)
+    let result: Awaited<ReturnType<typeof interviewer.evaluateAnswer>> = null
+    try {
+      result = await interviewer.evaluateAnswer(currentAnswer)
+    } catch (err) {
+      setAnswer(currentAnswer)
+      toast.error(readableError(err))
+      return
+    }
+
     if (!result) {
       setAnswer(currentAnswer)
       toast.error('AI evaluation failed. Please try again.')
       return
     }
     const { evaluation, nextDifficulty } = result
+    if (evaluation.isUncertain || evaluation.score < 40) {
+      toast.error('Answer quality is low. Add clearer reasoning and one concrete example.')
+    }
 
     const nextHistory = [
       ...interviewer.history,

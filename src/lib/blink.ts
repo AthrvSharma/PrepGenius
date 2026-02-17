@@ -348,6 +348,50 @@ export const blink = {
           return { object: { explanation: 'Explain the key idea, trade-offs, and a simple example.' } }
         }
 
+        if (payload?.action === 'generateInterviewQuestion') {
+          let ok = true
+          try {
+            const remote = await callAiServer('generateInterviewQuestion', payload)
+            if (remote) {
+              recordAiStat(Date.now() - start, true)
+              return { object: remote }
+            }
+            if (AI_STRICT) throw new Error('AI server did not return an interview question')
+          } catch (err) {
+            ok = false
+            logError('AI server generateInterviewQuestion failed', { error: err })
+            if (AI_STRICT) throw err
+          }
+          recordAiStat(Date.now() - start, ok)
+          return {
+            object: {
+              questionId: `ai_local_${Date.now()}`,
+              question: 'Explain a recent technical decision you made and why it was the best trade-off.',
+              difficulty: payload?.desiredDifficulty || 'Medium',
+              domain: payload?.targetDomain || payload?.preferredDomains?.[0] || 'General',
+              tags: ['communication', 'trade-offs'],
+              type: 'behavioral',
+              timeEstimateMin: 8,
+              interviewerNote: 'Focus on clarity, ownership, and measurable impact.',
+              rubric: {
+                expectedConcepts: ['context', 'decision factors', 'trade-off', 'outcome'],
+                keyPoints: ['state constraints', 'justify your choice', 'mention result'],
+                commonMistakes: ['vague answer', 'no measurable impact'],
+                edgeCases: ['alternative option', 'failure handling'],
+                scoringWeights: {
+                  correctness: 40,
+                  conceptCoverage: 25,
+                  clarity: 15,
+                  depth: 10,
+                  communication: 10,
+                },
+                idealAnswer: 'Give context, options, constraints, chosen solution, and measurable outcome.',
+                explanation: 'Use STAR format with technical depth.',
+              },
+            },
+          }
+        }
+
         if (payload?.action === 'evaluateAnswer') {
           let ok = true
           try {
@@ -360,6 +404,15 @@ export const blink = {
           } catch (err) {
             ok = false
             logError('AI server evaluateAnswer failed', { error: err })
+            const message = err instanceof Error ? err.message : ''
+            const isInvalidAnswer =
+              message.toLowerCase().includes('answer is too short') ||
+              message.toLowerCase().includes('please enter an answer') ||
+              message.toLowerCase().includes('answer looks invalid') ||
+              message.toLowerCase().includes('too repetitive')
+            if (isInvalidAnswer) {
+              throw new Error(message)
+            }
             if (AI_STRICT) throw err
           }
           const evaluation = evaluateAnswer(sanitizeText(payload.answer || ''), payload.rubric)
@@ -560,6 +613,89 @@ export const blink = {
           }
           recordAiStat(Date.now() - start, ok)
           return { object: { summary: '', focusAreas: [], nextSteps: [] } }
+        }
+
+        if (payload?.action === 'learningTopicExpansion') {
+          let ok = true
+          try {
+            const remote = await callAiServer('learningTopicExpansion', payload)
+            if (remote) {
+              recordAiStat(Date.now() - start, true)
+              return { object: remote }
+            }
+            if (AI_STRICT) throw new Error('AI server did not return a learning expansion')
+          } catch (err) {
+            ok = false
+            logError('AI server learningTopicExpansion failed', { error: err })
+            if (AI_STRICT) throw err
+          }
+          const topic = payload?.topic || {}
+          recordAiStat(Date.now() - start, ok)
+          return {
+            object: {
+              title: topic.title || payload?.topicTitle || 'Topic',
+              summary: topic.explanation || topic.definition || 'Review this topic with examples and a quick quiz.',
+              keyIdeas: [topic.definition || 'Core definition', 'Practical use', 'Trade-offs'],
+              realWorldUseCases: ['Use this concept in interview answers and project design decisions.'],
+              pitfalls: topic.commonMistakes || ['Skipping constraints', 'No concrete example'],
+              memoryTips: ['Explain what, why, and when.', 'Give one edge case.'],
+              flashcards: [
+                { front: `What is ${topic.title || 'this topic'}?`, back: topic.definition || 'Define it clearly.' },
+                { front: `When should you use ${topic.title || 'it'}?`, back: 'Use it when constraints and trade-offs matter.' },
+              ],
+              quiz: [
+                {
+                  question: topic.practiceQuestions?.[0] || `Explain ${topic.title || 'this concept'} with one example.`,
+                  expectedPoints: ['definition', 'example', 'trade-off'],
+                  difficulty: 'Medium',
+                },
+              ],
+              challenge: `Teach ${topic.title || 'this topic'} to a junior in 2 minutes.`,
+              nextTopics: topic.practiceQuestions?.slice(0, 3) || [],
+              fallbackQuestion: topic.practiceQuestions?.[0] || `How would you apply ${topic.title || 'this topic'} in production?`,
+            },
+          }
+        }
+
+        if (payload?.action === 'learningAnswerReview') {
+          let ok = true
+          try {
+            const remote = await callAiServer('learningAnswerReview', payload)
+            if (remote) {
+              recordAiStat(Date.now() - start, true)
+              return { object: remote }
+            }
+            if (AI_STRICT) throw new Error('AI server did not return a learning answer review')
+          } catch (err) {
+            ok = false
+            logError('AI server learningAnswerReview failed', { error: err })
+            const message = err instanceof Error ? err.message : ''
+            const lowerMessage = message.toLowerCase()
+            if (
+              lowerMessage.includes('answer is too short') ||
+              lowerMessage.includes('please enter an answer') ||
+              lowerMessage.includes('answer looks invalid') ||
+              lowerMessage.includes('too repetitive')
+            ) {
+              throw new Error(message)
+            }
+            if (AI_STRICT) throw err
+          }
+          recordAiStat(Date.now() - start, ok)
+          return {
+            object: {
+              score: 0,
+              verdict: 'Needs Improvement',
+              feedback: 'AI review is temporarily unavailable.',
+              strengths: [],
+              improvements: ['Answer with structure: definition, explanation, and one example.'],
+              missingPoints: ['core idea', 'example'],
+              modelAnswer: '',
+              nextStep: 'Retry with a clearer and longer response.',
+              isInvalid: false,
+              invalidReason: '',
+            },
+          }
         }
 
         if (keys.includes('question') && keys.includes('difficulty')) {

@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { Card } from '../../components/ui/card'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
+import { Textarea } from '../../components/ui/textarea'
 import { Badge } from '../../components/ui/badge'
 import { blink } from '../../lib/blink'
 import {
@@ -16,7 +17,13 @@ import {
   CheckCircle2,
   ChevronLeft,
   GraduationCap,
+  Bot,
+  MessageSquareQuote,
+  Loader2,
+  ShieldAlert,
+  Lightbulb,
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 interface LearningTopic {
   id: string
@@ -37,6 +44,45 @@ interface LearningSubject {
 }
 
 const COMPLETED_KEY = 'prepgenius.learning.completed'
+const AI_EXPANSION_CACHE_KEY = 'prepgenius.learning.ai.expansions'
+
+interface AiFlashcard {
+  front: string
+  back: string
+}
+
+interface AiQuizQuestion {
+  question: string
+  expectedPoints?: string[]
+  difficulty?: string
+}
+
+interface TopicAiExpansion {
+  title?: string
+  summary?: string
+  keyIdeas?: string[]
+  realWorldUseCases?: string[]
+  pitfalls?: string[]
+  memoryTips?: string[]
+  flashcards?: AiFlashcard[]
+  quiz?: AiQuizQuestion[]
+  challenge?: string
+  nextTopics?: string[]
+  fallbackQuestion?: string
+}
+
+interface TopicAnswerReview {
+  score?: number
+  verdict?: string
+  feedback?: string
+  strengths?: string[]
+  improvements?: string[]
+  missingPoints?: string[]
+  modelAnswer?: string
+  nextStep?: string
+  isInvalid?: boolean
+  invalidReason?: string
+}
 
 export function LearningHub() {
   const [subjects, setSubjects] = useState<LearningSubject[]>([])
@@ -44,6 +90,12 @@ export function LearningHub() {
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [completedTopics, setCompletedTopics] = useState<Set<string>>(new Set())
+  const [aiExpansionCache, setAiExpansionCache] = useState<Record<string, TopicAiExpansion>>({})
+  const [isExpandingTopic, setIsExpandingTopic] = useState(false)
+  const [activeQuizIndex, setActiveQuizIndex] = useState(0)
+  const [practiceAnswer, setPracticeAnswer] = useState('')
+  const [isReviewingAnswer, setIsReviewingAnswer] = useState(false)
+  const [answerReview, setAnswerReview] = useState<TopicAnswerReview | null>(null)
 
   useEffect(() => {
     const fetchSubjects = async () => {
@@ -69,8 +121,27 @@ export function LearningHub() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
+    const stored = window.localStorage.getItem(AI_EXPANSION_CACHE_KEY)
+    if (!stored) return
+    try {
+      const parsed = JSON.parse(stored)
+      if (parsed && typeof parsed === 'object') {
+        setAiExpansionCache(parsed as Record<string, TopicAiExpansion>)
+      }
+    } catch (error) {
+      console.error('Failed to parse AI topic cache', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
     window.localStorage.setItem(COMPLETED_KEY, JSON.stringify(Array.from(completedTopics)))
   }, [completedTopics])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(AI_EXPANSION_CACHE_KEY, JSON.stringify(aiExpansionCache))
+  }, [aiExpansionCache])
 
   const sortedSubjects = useMemo(() => {
     return [...subjects].sort((a, b) => a.name.localeCompare(b.name))
@@ -91,6 +162,23 @@ export function LearningHub() {
     if (!selectedSubject) return null
     return selectedSubject.topics.find((topic) => topic.id === selectedTopicId) || null
   }, [selectedSubject, selectedTopicId])
+
+  const selectedTopicExpansion = useMemo(() => {
+    if (!selectedTopic) return null
+    return aiExpansionCache[selectedTopic.id] || null
+  }, [aiExpansionCache, selectedTopic])
+
+  const activeQuizQuestion = useMemo(() => {
+    const quiz = selectedTopicExpansion?.quiz || []
+    if (!quiz.length) return null
+    return quiz[Math.max(0, Math.min(activeQuizIndex, quiz.length - 1))]
+  }, [activeQuizIndex, selectedTopicExpansion])
+
+  useEffect(() => {
+    setActiveQuizIndex(0)
+    setPracticeAnswer('')
+    setAnswerReview(null)
+  }, [selectedTopicId, selectedSubjectId])
 
   const searchResults = useMemo(() => {
     if (!query.trim()) return [] as Array<{ subject: LearningSubject; topic: LearningTopic }>
@@ -136,6 +224,115 @@ export function LearningHub() {
       }
       return next
     })
+  }
+
+  const readableError = (error: unknown) => {
+    if (!(error instanceof Error)) return 'Something went wrong. Please try again.'
+    const message = error.message || ''
+    try {
+      const parsed = JSON.parse(message)
+      if (typeof parsed?.error === 'string' && parsed.error.trim()) {
+        return parsed.error.trim()
+      }
+    } catch {
+      // Use raw error text
+    }
+    return message || 'Something went wrong. Please try again.'
+  }
+
+  const generateAiExpansion = async (forceRefresh = false) => {
+    if (!selectedSubject || !selectedTopic) return
+    if (!forceRefresh && aiExpansionCache[selectedTopic.id]) {
+      toast.success('AI deep dive already available for this topic.')
+      return
+    }
+    setIsExpandingTopic(true)
+    try {
+      const { object } = await blink.ai.generateObject({
+        prompt: `LEARNING_TOPIC_EXPANSION\nPAYLOAD:${JSON.stringify({
+          action: 'learningTopicExpansion',
+          subjectName: selectedSubject.name,
+          topicTitle: selectedTopic.title,
+          topic: selectedTopic,
+        })}`,
+        schema: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            summary: { type: 'string' },
+            keyIdeas: { type: 'array', items: { type: 'string' } },
+            realWorldUseCases: { type: 'array', items: { type: 'string' } },
+            pitfalls: { type: 'array', items: { type: 'string' } },
+            memoryTips: { type: 'array', items: { type: 'string' } },
+            flashcards: { type: 'array', items: { type: 'object' } },
+            quiz: { type: 'array', items: { type: 'object' } },
+            challenge: { type: 'string' },
+            nextTopics: { type: 'array', items: { type: 'string' } },
+            fallbackQuestion: { type: 'string' },
+          },
+        },
+      })
+
+      setAiExpansionCache((prev) => ({
+        ...prev,
+        [selectedTopic.id]: (object || {}) as TopicAiExpansion,
+      }))
+      setActiveQuizIndex(0)
+      setPracticeAnswer('')
+      setAnswerReview(null)
+      toast.success('AI deep dive generated for this topic.')
+    } catch (err) {
+      toast.error(readableError(err))
+    } finally {
+      setIsExpandingTopic(false)
+    }
+  }
+
+  const reviewAnswerWithAi = async () => {
+    if (!selectedTopic || !activeQuizQuestion) return
+    if (!practiceAnswer.trim()) {
+      toast.error('Please write your answer before submitting for review.')
+      return
+    }
+    setIsReviewingAnswer(true)
+    try {
+      const { object } = await blink.ai.generateObject({
+        prompt: `LEARNING_ANSWER_REVIEW\nPAYLOAD:${JSON.stringify({
+          action: 'learningAnswerReview',
+          topicTitle: selectedTopic.title,
+          topic: selectedTopic,
+          question: activeQuizQuestion.question,
+          expectedPoints: activeQuizQuestion.expectedPoints || [],
+          answer: practiceAnswer,
+        })}`,
+        schema: {
+          type: 'object',
+          properties: {
+            score: { type: 'number' },
+            verdict: { type: 'string' },
+            feedback: { type: 'string' },
+            strengths: { type: 'array', items: { type: 'string' } },
+            improvements: { type: 'array', items: { type: 'string' } },
+            missingPoints: { type: 'array', items: { type: 'string' } },
+            modelAnswer: { type: 'string' },
+            nextStep: { type: 'string' },
+            isInvalid: { type: 'boolean' },
+            invalidReason: { type: 'string' },
+          },
+        },
+      })
+      const review = (object || {}) as TopicAnswerReview
+      setAnswerReview(review)
+      if (review.isInvalid && review.invalidReason) {
+        toast.error(review.invalidReason)
+      } else {
+        toast.success('AI evaluation completed.')
+      }
+    } catch (err) {
+      toast.error(readableError(err))
+    } finally {
+      setIsReviewingAnswer(false)
+    }
   }
 
   return (
@@ -403,6 +600,198 @@ export function LearningHub() {
                         </ul>
                       </div>
                     ) : null}
+                  </div>
+
+                  <div className="p-5 rounded-2xl border border-primary/20 bg-primary/5 space-y-5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-bold flex items-center gap-2">
+                          <Bot className="w-4 h-4 text-primary" />
+                          AI Deep Dive
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Generate richer notes, flashcards, and interactive quiz feedback for this topic.
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="rounded-full"
+                        onClick={() => generateAiExpansion(Boolean(selectedTopicExpansion))}
+                        disabled={isExpandingTopic}
+                      >
+                        {isExpandingTopic ? (
+                          <>
+                            <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                            Generating...
+                          </>
+                        ) : selectedTopicExpansion ? 'Refresh AI Deep Dive' : 'Generate AI Deep Dive'}
+                      </Button>
+                    </div>
+
+                    {selectedTopicExpansion ? (
+                      <div className="space-y-5">
+                        {selectedTopicExpansion.summary ? (
+                          <div>
+                            <h4 className="text-xs uppercase tracking-wider font-bold text-muted-foreground">AI Summary</h4>
+                            <p className="text-sm mt-2 leading-relaxed">{selectedTopicExpansion.summary}</p>
+                          </div>
+                        ) : null}
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          {selectedTopicExpansion.keyIdeas?.length ? (
+                            <div className="p-4 rounded-2xl border border-border/30 bg-background/70">
+                              <h4 className="text-sm font-semibold">Key Ideas</h4>
+                              <ul className="mt-2 text-sm text-muted-foreground space-y-1">
+                                {selectedTopicExpansion.keyIdeas.map((idea, index) => (
+                                  <li key={index}>- {idea}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+
+                          {selectedTopicExpansion.realWorldUseCases?.length ? (
+                            <div className="p-4 rounded-2xl border border-border/30 bg-background/70">
+                              <h4 className="text-sm font-semibold">Real-world Use Cases</h4>
+                              <ul className="mt-2 text-sm text-muted-foreground space-y-1">
+                                {selectedTopicExpansion.realWorldUseCases.map((item, index) => (
+                                  <li key={index}>- {item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                        </div>
+
+                        {selectedTopicExpansion.memoryTips?.length ? (
+                          <div className="p-4 rounded-2xl border border-border/30 bg-background/70">
+                            <h4 className="text-sm font-semibold flex items-center gap-2">
+                              <Lightbulb className="w-4 h-4 text-primary" />
+                              Memory Tips
+                            </h4>
+                            <ul className="mt-2 text-sm text-muted-foreground space-y-1">
+                              {selectedTopicExpansion.memoryTips.map((item, index) => (
+                                <li key={index}>- {item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+
+                        {selectedTopicExpansion.flashcards?.length ? (
+                          <div className="space-y-2">
+                            <h4 className="text-sm font-semibold">Flashcards</h4>
+                            <div className="grid gap-3 md:grid-cols-2">
+                              {selectedTopicExpansion.flashcards.slice(0, 4).map((card, index) => (
+                                <div key={index} className="p-4 rounded-2xl border border-border/30 bg-background/70">
+                                  <p className="text-xs uppercase tracking-wider text-muted-foreground font-bold">Q</p>
+                                  <p className="text-sm mt-1">{card.front}</p>
+                                  <p className="text-xs uppercase tracking-wider text-muted-foreground font-bold mt-3">A</p>
+                                  <p className="text-sm mt-1 text-muted-foreground">{card.back}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {activeQuizQuestion ? (
+                          <div className="p-4 rounded-2xl border border-border/30 bg-background/80 space-y-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <h4 className="text-sm font-semibold flex items-center gap-2">
+                                <MessageSquareQuote className="w-4 h-4 text-primary" />
+                                AI Practice Review
+                              </h4>
+                              <Badge variant="secondary">
+                                Question {activeQuizIndex + 1}/{selectedTopicExpansion.quiz?.length || 1}
+                              </Badge>
+                            </div>
+                            <p className="text-sm">{activeQuizQuestion.question}</p>
+                            {activeQuizQuestion.expectedPoints?.length ? (
+                              <div className="flex flex-wrap gap-2">
+                                {activeQuizQuestion.expectedPoints.map((point, index) => (
+                                  <Badge key={index} variant="secondary">{point}</Badge>
+                                ))}
+                              </div>
+                            ) : null}
+                            <Textarea
+                              value={practiceAnswer}
+                              onChange={(event) => setPracticeAnswer(event.target.value)}
+                              placeholder="Write your answer. AI will score it and suggest improvements."
+                              className="min-h-[120px] rounded-2xl"
+                            />
+                            <div className="flex flex-wrap gap-2">
+                              <Button size="sm" onClick={reviewAnswerWithAi} disabled={isReviewingAnswer}>
+                                {isReviewingAnswer ? (
+                                  <>
+                                    <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                                    Evaluating...
+                                  </>
+                                ) : 'Evaluate with AI'}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={activeQuizIndex <= 0}
+                                onClick={() => {
+                                  setActiveQuizIndex((prev) => Math.max(0, prev - 1))
+                                  setAnswerReview(null)
+                                  setPracticeAnswer('')
+                                }}
+                              >
+                                Previous
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={activeQuizIndex >= (selectedTopicExpansion.quiz?.length || 1) - 1}
+                                onClick={() => {
+                                  setActiveQuizIndex((prev) => prev + 1)
+                                  setAnswerReview(null)
+                                  setPracticeAnswer('')
+                                }}
+                              >
+                                Next
+                              </Button>
+                            </div>
+
+                            {answerReview ? (
+                              <div
+                                className={`rounded-2xl border p-4 text-sm space-y-2 ${
+                                  answerReview.isInvalid
+                                    ? 'border-amber-400/40 bg-amber-500/10'
+                                    : 'border-border/30 bg-secondary/20'
+                                }`}
+                              >
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge variant="secondary">Score {answerReview.score ?? 0}%</Badge>
+                                  {answerReview.verdict ? <Badge variant="secondary">{answerReview.verdict}</Badge> : null}
+                                  {answerReview.isInvalid ? (
+                                    <span className="inline-flex items-center gap-1 text-amber-700 font-medium">
+                                      <ShieldAlert className="w-4 h-4" />
+                                      Invalid answer
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {answerReview.feedback ? <p>{answerReview.feedback}</p> : null}
+                                {answerReview.improvements?.length ? (
+                                  <p className="text-muted-foreground">Improve: {answerReview.improvements.join(', ')}</p>
+                                ) : null}
+                                {answerReview.missingPoints?.length ? (
+                                  <p className="text-muted-foreground">Missing points: {answerReview.missingPoints.join(', ')}</p>
+                                ) : null}
+                                {answerReview.modelAnswer ? (
+                                  <p className="text-muted-foreground">Model answer: {answerReview.modelAnswer}</p>
+                                ) : null}
+                                {answerReview.invalidReason ? (
+                                  <p className="text-amber-700 font-medium">{answerReview.invalidReason}</p>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        Generate AI Deep Dive to unlock richer notes, flashcards, and answer-level evaluation for this topic.
+                      </p>
+                    )}
                   </div>
                 </>
               ) : (

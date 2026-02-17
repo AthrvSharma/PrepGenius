@@ -36,6 +36,70 @@ interface HistoryItem {
 const DEFAULT_TOTAL_QUESTIONS = 10
 const DEFAULT_TIME_LIMIT_SEC = 1800
 
+function normalizeDifficultyLabel(value: string, fallback: Difficulty = 'Medium'): Difficulty {
+  const normalized = (value || '').toLowerCase()
+  if (normalized === 'easy') return 'Easy'
+  if (normalized === 'hard') return 'Hard'
+  if (normalized === 'medium') return 'Medium'
+  return fallback
+}
+
+function normalizeQuestionType(value: string) {
+  const normalized = (value || '').toLowerCase()
+  if (normalized === 'coding') return 'coding'
+  if (normalized === 'system') return 'system'
+  if (normalized === 'behavioral') return 'behavioral'
+  return 'theory'
+}
+
+function validateInterviewAnswer(answer: string): string | null {
+  const trimmed = answer.trim()
+  if (!trimmed) return 'Please enter an answer before submitting.'
+
+  const words = trimmed.split(/\s+/).filter(Boolean)
+  if (trimmed.length < 25 || words.length < 6) {
+    return 'Answer is too short. Write at least 6 words with clear reasoning.'
+  }
+
+  const lowered = trimmed.toLowerCase()
+  const invalidMarkers = ['idk', "i don't know", 'dont know', 'no idea', 'n/a', 'skip', '...']
+  if (invalidMarkers.some((marker) => lowered.includes(marker))) {
+    return 'Answer looks invalid. Please provide a meaningful explanation.'
+  }
+
+  const uniqueWords = new Set(words.map((word) => word.toLowerCase()))
+  if (uniqueWords.size <= Math.max(2, Math.floor(words.length / 6))) {
+    return 'Answer is too repetitive. Add concrete points and an example.'
+  }
+
+  return null
+}
+
+function extractReadableErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return 'Unknown error'
+  const message = error.message || 'Unknown error'
+  try {
+    const parsed = JSON.parse(message)
+    if (typeof parsed?.error === 'string' && parsed.error.trim()) {
+      return parsed.error.trim()
+    }
+  } catch {
+    // Ignore parse errors and use raw message
+  }
+  return message
+}
+
+function isInvalidAnswerError(message: string): boolean {
+  const normalized = message.toLowerCase()
+  return (
+    normalized.includes('too short') ||
+    normalized.includes('please enter an answer') ||
+    normalized.includes('answer looks invalid') ||
+    normalized.includes('too repetitive') ||
+    normalized.includes('missing answer')
+  )
+}
+
 export function useInterviewer(sessionId: string, profile: UserProfile | null) {
   const [currentQuestion, setCurrentQuestion] = useState<InterviewQuestionState | null>(null)
   const [history, setHistory] = useState<HistoryItem[]>([])
@@ -160,9 +224,100 @@ export function useInterviewer(sessionId: string, profile: UserProfile | null) {
       setIsProcessing(true)
       try {
         const askedIds = existingHistory.map((item) => item.question.questionId)
+        const askedQuestions = existingHistory.map((item) => item.question.text).filter(Boolean)
         const bank = bankOverride || questionBank
         const domains = domainsOverride || preferredDomains
-        const nextQuestion = selectNextQuestion(bank, askedIds, domains, baseDifficulty)
+        let nextQuestion: QuestionBankEntry | null = null
+
+        try {
+          const recentHistory = existingHistory.slice(-5).map((item) => ({
+            question: item.question.text,
+            domain: item.question.domain,
+            difficulty: item.question.difficulty,
+            score: item.evaluation?.score ?? null,
+            missingConcepts: item.evaluation?.missingConcepts || [],
+          }))
+          const targetDomain = domains[existingHistory.length % Math.max(domains.length, 1)] || 'General'
+          const prompt = `GENERATE_INTERVIEW_QUESTION\nPAYLOAD:${JSON.stringify({
+            action: 'generateInterviewQuestion',
+            targetRole: profile?.targetRole || profile?.careerPathId || '',
+            careerPath: profile?.careerPathId || '',
+            preferredDomains: domains,
+            targetDomain,
+            desiredDifficulty: baseDifficulty,
+            askedQuestions,
+            history: recentHistory,
+          })}`
+
+          const { object } = await blink.ai.generateObject({
+            prompt,
+            schema: {
+              type: 'object',
+              properties: {
+                questionId: { type: 'string' },
+                question: { type: 'string' },
+                difficulty: { type: 'string' },
+                domain: { type: 'string' },
+                tags: { type: 'array', items: { type: 'string' } },
+                type: { type: 'string' },
+                timeEstimateMin: { type: 'number' },
+                interviewerNote: { type: 'string' },
+                starterCode: { type: 'string' },
+                rubric: { type: 'object' },
+              },
+            },
+          })
+
+          const aiQuestionText = typeof object?.question === 'string' ? object.question.trim() : ''
+          if (aiQuestionText) {
+            const rubric = (object as any)?.rubric || {}
+            const expectedConcepts = Array.isArray(rubric.expectedConcepts)
+              ? rubric.expectedConcepts.filter((item: unknown) => typeof item === 'string')
+              : []
+            const keyPoints = Array.isArray(rubric.keyPoints)
+              ? rubric.keyPoints.filter((item: unknown) => typeof item === 'string')
+              : []
+            const commonMistakes = Array.isArray(rubric.commonMistakes)
+              ? rubric.commonMistakes.filter((item: unknown) => typeof item === 'string')
+              : []
+            const edgeCases = Array.isArray(rubric.edgeCases)
+              ? rubric.edgeCases.filter((item: unknown) => typeof item === 'string')
+              : []
+            const scoringWeights = rubric.scoringWeights && typeof rubric.scoringWeights === 'object'
+              ? rubric.scoringWeights
+              : undefined
+            const difficultyLabel = normalizeDifficultyLabel(String((object as any)?.difficulty || baseDifficulty), baseDifficulty)
+            nextQuestion = {
+              id: typeof (object as any)?.questionId === 'string' && (object as any).questionId.trim()
+                ? (object as any).questionId.trim()
+                : `ai_${Date.now()}`,
+              prompt: aiQuestionText,
+              difficulty: difficultyLabel,
+              domain: String((object as any)?.domain || targetDomain || 'General'),
+              tags: Array.isArray((object as any)?.tags)
+                ? (object as any).tags.filter((item: unknown) => typeof item === 'string').slice(0, 8)
+                : [],
+              type: normalizeQuestionType(String((object as any)?.type || 'theory')),
+              rubric: {
+                expectedConcepts,
+                keyPoints,
+                commonMistakes,
+                edgeCases,
+                scoringWeights,
+                idealAnswer: typeof rubric.idealAnswer === 'string' ? rubric.idealAnswer : '',
+                explanation: typeof rubric.explanation === 'string' ? rubric.explanation : '',
+              },
+              timeEstimateMin: Math.max(5, Math.min(35, Number((object as any)?.timeEstimateMin || 8))),
+              starterCode: typeof (object as any)?.starterCode === 'string' ? (object as any).starterCode : undefined,
+            }
+          }
+        } catch (err) {
+          logError('AI recruiter question generation failed. Falling back to question bank.', { error: err })
+        }
+
+        if (!nextQuestion) {
+          nextQuestion = selectNextQuestion(bank, askedIds, domains, baseDifficulty)
+        }
 
         if (!nextQuestion) {
           setSessionStatus('completed')
@@ -218,7 +373,19 @@ export function useInterviewer(sessionId: string, profile: UserProfile | null) {
         setIsProcessing(false)
       }
     },
-    [difficulty, followUpsEnabled, history, preferredDomains, profile?.userId, progress.total, questionBank, sessionId, timeLimitSec]
+    [
+      difficulty,
+      followUpsEnabled,
+      history,
+      preferredDomains,
+      profile?.careerPathId,
+      profile?.targetRole,
+      profile?.userId,
+      progress.total,
+      questionBank,
+      sessionId,
+      timeLimitSec,
+    ]
   )
 
   const generateFollowUpQuestion = useCallback(
@@ -280,6 +447,11 @@ export function useInterviewer(sessionId: string, profile: UserProfile | null) {
   const evaluateAnswer = useCallback(
     async (answer: string) => {
       if (!currentQuestion || isProcessing) return null
+      const validationError = validateInterviewAnswer(answer)
+      if (validationError) {
+        throw new Error(validationError)
+      }
+
       setIsProcessing(true)
       try {
         const sanitized = clampText(answer, 2000)
@@ -356,6 +528,10 @@ export function useInterviewer(sessionId: string, profile: UserProfile | null) {
 
         return { evaluation, nextDifficulty: newDifficulty }
       } catch (err) {
+        const message = extractReadableErrorMessage(err)
+        if (isInvalidAnswerError(message)) {
+          throw new Error(message)
+        }
         logError('Error evaluating answer', { error: err })
         return null
       } finally {

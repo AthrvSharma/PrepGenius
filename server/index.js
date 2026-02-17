@@ -241,7 +241,7 @@ async function callOpenAI(messages, options = {}) {
     (isCloudflare ? 'off' : '')
   ).trim().toLowerCase()
   const wantsStructuredOutput = options.forceJson || responseFormatMode === 'json'
-  const shouldDisableStructuredOutput = responseFormatMode === 'off' && !options.forceJson
+  const shouldDisableStructuredOutput = responseFormatMode === 'off'
   const useResponseFormat =
     !isLocal &&
     wantsStructuredOutput &&
@@ -514,6 +514,7 @@ const ALLOWED_ACTIONS = new Set([
   'generateText',
   'generateHint',
   'explainConcept',
+  'generateInterviewQuestion',
   'evaluateAnswer',
   'finalReport',
   'resumeAnalysis',
@@ -522,6 +523,8 @@ const ALLOWED_ACTIONS = new Set([
   'generateRoadmap',
   'updateRoadmap',
   'coachSummary',
+  'learningTopicExpansion',
+  'learningAnswerReview',
 ])
 
 const CACHEABLE_ACTIONS = new Set([
@@ -530,6 +533,7 @@ const CACHEABLE_ACTIONS = new Set([
   'dashboardInsights',
   'generateRoadmap',
   'updateRoadmap',
+  'learningTopicExpansion',
 ])
 
 function clampScore(value) {
@@ -660,6 +664,211 @@ function normalizeJobMatch(raw = {}) {
   return normalized
 }
 
+function normalizeDifficulty(value, fallback = 'Medium') {
+  const v = sanitize(value || '').toLowerCase()
+  if (v === 'easy') return 'Easy'
+  if (v === 'hard') return 'Hard'
+  if (v === 'medium') return 'Medium'
+  return fallback
+}
+
+function normalizeQuestionType(value, fallback = 'theory') {
+  const v = sanitize(value || '').toLowerCase()
+  if (['theory', 'coding', 'system', 'behavioral'].includes(v)) return v
+  return fallback
+}
+
+function normalizeScoringWeights(raw = {}) {
+  const defaults = {
+    correctness: 40,
+    conceptCoverage: 25,
+    clarity: 15,
+    depth: 10,
+    communication: 10,
+  }
+  const fields = Object.keys(defaults)
+  const sanitizedWeights = {}
+  let total = 0
+
+  fields.forEach((field) => {
+    const value = Number(raw?.[field])
+    const normalized = Number.isFinite(value) && value > 0 ? value : defaults[field]
+    sanitizedWeights[field] = normalized
+    total += normalized
+  })
+
+  if (total <= 0) return defaults
+  if (total === 100) return sanitizedWeights
+
+  const ratio = 100 / total
+  const adjusted = {}
+  fields.forEach((field, index) => {
+    if (index === fields.length - 1) {
+      const used = fields
+        .slice(0, index)
+        .reduce((sum, current) => sum + adjusted[current], 0)
+      adjusted[field] = Math.max(0, 100 - used)
+      return
+    }
+    adjusted[field] = Math.max(1, Math.round(sanitizedWeights[field] * ratio))
+  })
+  return adjusted
+}
+
+function normalizeRubric(raw = {}) {
+  return {
+    expectedConcepts: sanitizeArray(raw.expectedConcepts || []).slice(0, 10),
+    keyPoints: sanitizeArray(raw.keyPoints || []).slice(0, 12),
+    commonMistakes: sanitizeArray(raw.commonMistakes || []).slice(0, 8),
+    edgeCases: sanitizeArray(raw.edgeCases || []).slice(0, 8),
+    scoringWeights: normalizeScoringWeights(raw.scoringWeights || {}),
+    idealAnswer: sanitize(raw.idealAnswer || ''),
+    explanation: sanitize(raw.explanation || ''),
+  }
+}
+
+function normalizeInterviewQuestion(raw = {}, payload = {}) {
+  const preferredDomains = sanitizeArray(payload?.preferredDomains || [])
+  const fallbackDomain = preferredDomains[0] || 'General'
+  const fallbackDifficulty = normalizeDifficulty(payload?.desiredDifficulty, 'Medium')
+  const questionText = sanitize(raw.question || raw.prompt || raw.questionText || '')
+  const rubric = normalizeRubric(raw.rubric || raw)
+  const fallbackKeyPoint = rubric.keyPoints[0] || rubric.expectedConcepts[0] || 'core concept'
+
+  return {
+    questionId: sanitize(raw.questionId || `ai_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`),
+    question: questionText || `Explain ${fallbackKeyPoint} and its trade-offs.`,
+    difficulty: normalizeDifficulty(raw.difficulty, fallbackDifficulty),
+    domain: sanitize(raw.domain || fallbackDomain),
+    tags: sanitizeArray(raw.tags || []).slice(0, 8),
+    type: normalizeQuestionType(raw.type, 'theory'),
+    timeEstimateMin: Math.max(5, Math.min(35, Number(raw.timeEstimateMin || 8))),
+    rubric,
+    interviewerNote: sanitize(raw.interviewerNote || ''),
+    starterCode: sanitize(raw.starterCode || ''),
+  }
+}
+
+function normalizeFlashcards(raw = []) {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((item) => ({
+      front: sanitize(item?.front || item?.question || ''),
+      back: sanitize(item?.back || item?.answer || ''),
+    }))
+    .filter((item) => item.front && item.back)
+    .slice(0, 8)
+}
+
+function normalizeTopicQuiz(raw = []) {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((item) => ({
+      question: sanitize(item?.question || item?.prompt || ''),
+      expectedPoints: sanitizeArray(item?.expectedPoints || item?.keyPoints || []).slice(0, 6),
+      difficulty: normalizeDifficulty(item?.difficulty, 'Medium'),
+    }))
+    .filter((item) => item.question)
+    .slice(0, 6)
+}
+
+function normalizeLearningTopicExpansion(raw = {}, payload = {}) {
+  const topic = payload?.topic || {}
+  const title = sanitize(topic.title || payload?.topicTitle || '')
+  const fallbackQuestion = sanitizeArray(topic.practiceQuestions || [])[0] || `How would you apply ${title || 'this concept'} in a real project?`
+
+  return {
+    title: sanitize(raw.title || title),
+    summary: sanitize(raw.summary || topic.explanation || topic.definition || ''),
+    keyIdeas: sanitizeArray(raw.keyIdeas || topic?.rubric?.expectedConcepts || []).slice(0, 8),
+    realWorldUseCases: sanitizeArray(raw.realWorldUseCases || []).slice(0, 8),
+    pitfalls: sanitizeArray(raw.pitfalls || topic.commonMistakes || []).slice(0, 8),
+    memoryTips: sanitizeArray(raw.memoryTips || []).slice(0, 6),
+    flashcards: normalizeFlashcards(raw.flashcards || []),
+    quiz: normalizeTopicQuiz(raw.quiz || []),
+    challenge: sanitize(raw.challenge || ''),
+    nextTopics: sanitizeArray(raw.nextTopics || []).slice(0, 6),
+    fallbackQuestion,
+  }
+}
+
+function normalizeLearningAnswerReview(raw = {}, payload = {}) {
+  const verdictRaw = sanitize(raw.verdict || '').toLowerCase()
+  const verdict = verdictRaw === 'strong'
+    ? 'Strong'
+    : verdictRaw === 'incorrect'
+      ? 'Incorrect'
+      : 'Needs Improvement'
+
+  return {
+    score: clampScore(raw.score) ?? 0,
+    verdict,
+    feedback: sanitize(raw.feedback || ''),
+    strengths: sanitizeArray(raw.strengths || []).slice(0, 6),
+    improvements: sanitizeArray(raw.improvements || []).slice(0, 8),
+    missingPoints: sanitizeArray(raw.missingPoints || []).slice(0, 8),
+    modelAnswer: sanitize(raw.modelAnswer || ''),
+    nextStep: sanitize(raw.nextStep || ''),
+    isInvalid: Boolean(raw.isInvalid),
+    invalidReason: sanitize(raw.invalidReason || ''),
+    question: sanitize(payload?.question || ''),
+  }
+}
+
+function validateFreeformAnswer(input, options = {}) {
+  const value = sanitize(input || '')
+  const minChars = Number(options.minChars || 25)
+  const minWords = Number(options.minWords || 6)
+  const lowered = value.toLowerCase()
+  const words = value.split(/\s+/).filter(Boolean)
+
+  if (!value) {
+    return { ok: false, reason: 'Please enter an answer before submitting.' }
+  }
+  if (value.length < minChars || words.length < minWords) {
+    return {
+      ok: false,
+      reason: `Answer is too short. Write at least ${minWords} words with a clear explanation.`,
+    }
+  }
+
+  const invalidMarkers = [
+    'idk',
+    "i don't know",
+    'dont know',
+    'no idea',
+    'n/a',
+    'none',
+    'skip',
+    'asdf',
+    '???',
+    '...',
+  ]
+  if (invalidMarkers.some((marker) => lowered.includes(marker))) {
+    return {
+      ok: false,
+      reason: 'Answer looks invalid. Please provide a real explanation with key points.',
+    }
+  }
+
+  if (/^(.)\1{6,}$/.test(lowered.replace(/\s+/g, ''))) {
+    return {
+      ok: false,
+      reason: 'Answer looks invalid. Please write a meaningful response.',
+    }
+  }
+
+  const uniqueWords = new Set(words.map((word) => word.toLowerCase()))
+  if (uniqueWords.size <= Math.max(2, Math.floor(words.length / 6))) {
+    return {
+      ok: false,
+      reason: 'Answer is too repetitive. Add clearer explanation and examples.',
+    }
+  }
+
+  return { ok: true, reason: '' }
+}
+
 function buildFallbackEvaluation() {
   return normalizeEvaluation({
     score: 0,
@@ -773,6 +982,104 @@ function buildFallbackFinalReport(evaluations = []) {
   }
 }
 
+function buildFallbackInterviewQuestion(payload = {}) {
+  const preferredDomains = sanitizeArray(payload?.preferredDomains || [])
+  const domain = preferredDomains[0] || 'General'
+  const difficulty = normalizeDifficulty(payload?.desiredDifficulty, 'Medium')
+  return normalizeInterviewQuestion({
+    question: `As a recruiter, explain a real scenario where ${domain} decisions affected system reliability.`,
+    difficulty,
+    domain,
+    type: 'theory',
+    tags: [domain, 'communication', 'trade-offs'],
+    timeEstimateMin: 8,
+    interviewerNote: 'I am evaluating clarity, trade-offs, and practical thinking.',
+    rubric: {
+      expectedConcepts: ['clear assumptions', 'step-by-step approach', 'trade-offs'],
+      keyPoints: [
+        'define context and constraints',
+        'explain chosen approach',
+        'mention one alternative and why not chosen',
+        'state expected impact',
+      ],
+      commonMistakes: ['vague answer', 'no trade-off discussion', 'missing practical example'],
+      edgeCases: ['failure mode', 'scale increase'],
+    },
+  }, payload)
+}
+
+function buildFallbackLearningTopicExpansion(payload = {}) {
+  const topic = payload?.topic || {}
+  const title = sanitize(topic?.title || payload?.topicTitle || 'Topic')
+  const practice = sanitizeArray(topic?.practiceQuestions || [])
+  return normalizeLearningTopicExpansion({
+    title,
+    summary: sanitize(topic?.explanation || topic?.definition || `Learn ${title} with concepts, examples, and revision drills.`),
+    keyIdeas: [
+      `Core definition of ${title}`,
+      'How to apply it in interviews',
+      'Common edge cases and pitfalls',
+    ],
+    realWorldUseCases: [
+      `Use ${title} while designing maintainable systems.`,
+      `Use ${title} to justify trade-offs in interview answers.`,
+    ],
+    pitfalls: sanitizeArray(topic?.commonMistakes || ['Skipping constraints', 'No concrete example']),
+    memoryTips: [
+      'Explain in three parts: what, why, when.',
+      'Always give one real scenario.',
+      'Compare with a related concept.',
+    ],
+    flashcards: [
+      { front: `What is ${title}?`, back: sanitize(topic?.definition || `Define ${title} and why it matters.`) },
+      { front: `When would you use ${title}?`, back: 'Use it when constraints and trade-offs matter.' },
+    ],
+    quiz: [
+      {
+        question: practice[0] || `How would you explain ${title} to an interviewer in under 90 seconds?`,
+        expectedPoints: ['clear definition', 'one practical scenario', 'one trade-off'],
+      },
+      {
+        question: practice[1] || `What common mistake should be avoided in ${title}?`,
+        expectedPoints: ['name one pitfall', 'show correction'],
+      },
+    ],
+    challenge: `Write a concise explanation of ${title} with one real-world example.`,
+    nextTopics: practice.slice(0, 3),
+  }, payload)
+}
+
+function buildFallbackLearningAnswerReview(payload = {}, reason = '') {
+  const invalidReason = sanitize(reason || '')
+  if (invalidReason) {
+    return normalizeLearningAnswerReview({
+      score: 0,
+      verdict: 'Incorrect',
+      feedback: 'Your answer could not be evaluated.',
+      strengths: [],
+      improvements: ['Write a clearer and longer explanation.'],
+      missingPoints: ['core idea', 'example', 'trade-off'],
+      modelAnswer: '',
+      nextStep: 'Retry with a structured response.',
+      isInvalid: true,
+      invalidReason,
+    }, payload)
+  }
+
+  return normalizeLearningAnswerReview({
+    score: 0,
+    verdict: 'Needs Improvement',
+    feedback: 'AI review is temporarily unavailable.',
+    strengths: [],
+    improvements: ['Use a structured format: definition, approach, example, trade-off.'],
+    missingPoints: ['core explanation'],
+    modelAnswer: '',
+    nextStep: 'Retry with more detail.',
+    isInvalid: false,
+    invalidReason: '',
+  }, payload)
+}
+
 function buildActionFallback(action, payload = {}) {
   const focusAreas = sanitizeArray(payload?.focusAreas || [])
 
@@ -783,6 +1090,8 @@ function buildActionFallback(action, payload = {}) {
       return { hint: 'Start with assumptions, then explain approach and one edge case.' }
     case 'explainConcept':
       return { explanation: 'Define the concept, explain how it works, and mention one trade-off.' }
+    case 'generateInterviewQuestion':
+      return buildFallbackInterviewQuestion(payload)
     case 'evaluateAnswer':
       return buildFallbackEvaluation()
     case 'finalReport':
@@ -850,6 +1159,10 @@ function buildActionFallback(action, payload = {}) {
           'Retry two previously missed questions.',
         ],
       }
+    case 'learningTopicExpansion':
+      return buildFallbackLearningTopicExpansion(payload)
+    case 'learningAnswerReview':
+      return buildFallbackLearningAnswerReview(payload)
     default:
       return null
   }
@@ -998,16 +1311,85 @@ Return JSON:
       })
     }
 
+    if (action === 'generateInterviewQuestion') {
+      const preferredDomains = sanitizeArray(payload?.preferredDomains || [])
+      const recentHistory = Array.isArray(payload?.history) ? payload.history.slice(-5) : []
+      const askedQuestions = sanitizeArray(payload?.askedQuestions || []).slice(0, 25)
+      const desiredDifficulty = normalizeDifficulty(payload?.desiredDifficulty, 'Medium')
+      const targetDomain = sanitize(payload?.targetDomain || preferredDomains[0] || 'General')
+      const sessionRole = sanitize(payload?.targetRole || payload?.careerPath || '')
+
+      const system = `You are a senior technical recruiter conducting a realistic mock interview.
+Rules:
+- Ask one interview question only.
+- Keep tone realistic and recruiter-like.
+- Return JSON only.
+- Include rubric fields so the answer can be evaluated strictly.
+- Prefer fresh questions, avoid repeating prior prompts.`
+      const user = `Target role: ${sessionRole}
+Preferred domains: ${preferredDomains.join(', ')}
+Primary domain for this question: ${targetDomain}
+Desired difficulty: ${desiredDifficulty}
+Asked questions (avoid repeats): ${askedQuestions.join(' | ')}
+Recent history summary: ${JSON.stringify(recentHistory)}
+
+Return JSON:
+{
+  "questionId": "string",
+  "question": "string",
+  "difficulty": "Easy|Medium|Hard",
+  "domain": "string",
+  "type": "theory|coding|system|behavioral",
+  "tags": ["string"],
+  "timeEstimateMin": number,
+  "interviewerNote": "string",
+  "starterCode": "string",
+  "rubric": {
+    "expectedConcepts": ["string"],
+    "keyPoints": ["string"],
+    "commonMistakes": ["string"],
+    "edgeCases": ["string"],
+    "scoringWeights": {
+      "correctness": number,
+      "conceptCoverage": number,
+      "clarity": number,
+      "depth": number,
+      "communication": number
+    },
+    "idealAnswer": "string",
+    "explanation": "string"
+  }
+}`
+
+      const content = await callOpenAI([
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ], {
+        temperature: 0.3,
+        forceJson: true,
+        retries: 1,
+        maxTokens: 1200,
+      })
+
+      const parsed = await parseOrRepair(content, 'generateInterviewQuestion')
+      if (!parsed) {
+        throw new Error('Failed to parse AI response')
+      }
+
+      return res.json({ data: normalizeInterviewQuestion(parsed, payload) })
+    }
+
     if (action === 'evaluateAnswer') {
       const question = payload?.question || {}
       const rubric = payload?.rubric || {}
       const answer = sanitize(payload?.answer || '')
 
-      if (!answer) {
-        return res.status(400).json({ error: 'Missing answer' })
-      }
       if (!sanitize(question.text || '')) {
         return res.status(400).json({ error: 'Missing question' })
+      }
+      const answerValidation = validateFreeformAnswer(answer, { minChars: 25, minWords: 6 })
+      if (!answerValidation.ok) {
+        return res.status(400).json({ error: answerValidation.reason })
       }
 
       const system = `You are a strict technical interview evaluator. Use the rubric to score the answer.
@@ -1509,6 +1891,123 @@ Return JSON:
 
       if (cacheKey) setCache(cacheKey, parsed)
       return res.json({ data: parsed })
+    }
+
+    if (action === 'learningTopicExpansion') {
+      const subjectName = sanitize(payload?.subjectName || '')
+      const topic = payload?.topic || {}
+      const topicTitle = sanitize(topic?.title || payload?.topicTitle || '')
+
+      if (!topicTitle) {
+        return res.status(400).json({ error: 'Missing topic title' })
+      }
+
+      const system = `You are an interactive interview prep tutor.
+Generate concise but rich study content for one topic.
+Return JSON only.`
+      const user = `Subject: ${subjectName}
+Topic title: ${topicTitle}
+Definition: ${sanitize(topic?.definition || '')}
+Explanation: ${sanitize(topic?.explanation || '')}
+Practice prompts: ${sanitizeArray(topic?.practiceQuestions || []).join(' | ')}
+Common mistakes: ${sanitizeArray(topic?.commonMistakes || []).join(' | ')}
+
+Return JSON:
+{
+  "title": "string",
+  "summary": "string",
+  "keyIdeas": ["string"],
+  "realWorldUseCases": ["string"],
+  "pitfalls": ["string"],
+  "memoryTips": ["string"],
+  "flashcards": [
+    { "front": "string", "back": "string" }
+  ],
+  "quiz": [
+    {
+      "question": "string",
+      "expectedPoints": ["string"],
+      "difficulty": "Easy|Medium|Hard"
+    }
+  ],
+  "challenge": "string",
+  "nextTopics": ["string"]
+}`
+
+      const content = await callOpenAI([
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ], {
+        model: process.env.OPENAI_MODEL_ACCURATE || process.env.OPENAI_MODEL,
+        temperature: 0.2,
+        forceJson: true,
+        retries: 1,
+        maxTokens: 1500,
+      })
+
+      const parsed = await parseOrRepair(content, 'learningTopicExpansion')
+      if (!parsed) {
+        throw new Error('Failed to parse AI response')
+      }
+
+      const normalized = normalizeLearningTopicExpansion(parsed, payload)
+      if (cacheKey) setCache(cacheKey, normalized)
+      return res.json({ data: normalized })
+    }
+
+    if (action === 'learningAnswerReview') {
+      const topicTitle = sanitize(payload?.topicTitle || payload?.topic?.title || '')
+      const question = sanitize(payload?.question || '')
+      const expectedPoints = sanitizeArray(payload?.expectedPoints || [])
+      const userAnswer = sanitize(payload?.answer || '')
+
+      if (!topicTitle || !question) {
+        return res.status(400).json({ error: 'Missing topic or question' })
+      }
+
+      const answerValidation = validateFreeformAnswer(userAnswer, { minChars: 20, minWords: 5 })
+      if (!answerValidation.ok) {
+        return res.status(400).json({ error: answerValidation.reason })
+      }
+
+      const system = `You are a strict learning coach.
+Evaluate the user's answer with practical and accurate feedback.
+Return JSON only.`
+      const user = `Topic: ${topicTitle}
+Question: ${question}
+Expected points: ${expectedPoints.join(', ')}
+User answer: ${userAnswer}
+
+Return JSON:
+{
+  "score": number,
+  "verdict": "Strong|Needs Improvement|Incorrect",
+  "feedback": "string",
+  "strengths": ["string"],
+  "improvements": ["string"],
+  "missingPoints": ["string"],
+  "modelAnswer": "string",
+  "nextStep": "string",
+  "isInvalid": boolean,
+  "invalidReason": "string"
+}`
+
+      const content = await callOpenAI([
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ], {
+        temperature: 0.1,
+        forceJson: true,
+        retries: 1,
+        maxTokens: 900,
+      })
+
+      const parsed = await parseOrRepair(content, 'learningAnswerReview')
+      if (!parsed) {
+        throw new Error('Failed to parse AI response')
+      }
+
+      return res.json({ data: normalizeLearningAnswerReview(parsed, payload) })
     }
 
     logEvent('error', 'unsupported_action', { requestId, action })
