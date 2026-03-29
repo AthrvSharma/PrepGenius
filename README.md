@@ -1,9 +1,18 @@
 <div align="center">
-  <img src="https://img.icons8.com/illustrations/64/000000/brain-3.png" width="100" height="100" alt="PrepGenius Logo">
+  <img src="https://img.icons8.com/illustrations/64/000000/brain-3.png" width="120" height="120" alt="PrepGenius Logo">
 
-  <h1>🎯 PrepGenius</h1>
-  <p><b>Master Your Career Path with AI-Powered Interview Intelligence</b></p>
-  
+  <h1>
+    <a href="https://git.io/typing-svg">
+      <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=40&pause=1000&color=4A90E2&center=true&vCenter=true&width=435&lines=PrepGenius;AI+Interview+Prep;Master+Your+Career" alt="Typing SVG" />
+    </a>
+  </h1>
+
+  <h3>
+    <a href="https://git.io/typing-svg">
+      <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=500&size=20&pause=1000&color=B8E986&center=true&vCenter=true&width=435&lines=Elevate+Your+Professional+Journey;Real-time+AI+Feedback;Local+LLM+Support+(Ollama)" alt="Typing SVG" />
+    </a>
+  </h3>
+
   <p>
     <img src="https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React">
     <img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript">
@@ -17,11 +26,11 @@
   </p>
 
   <p>
-    <a href="#🚀-quick-start">Quick Start</a> •
-    <a href="#✨-features">Features</a> •
-    <a href="#🛠️-tech-stack">Tech Stack</a> •
-    <a href="#📂-project-structure">Project Structure</a> •
-    <a href="#📄-license">License</a>
+    🚀 <a href="#🚀-quick-start">Quick Start</a> •
+    ✨ <a href="#✨-features">Features</a> •
+    🛠️ <a href="#🛠️-tech-stack">Tech Stack</a> •
+    📂 <a href="#📂-project-structure">Structure</a> •
+    📄 <a href="#📄-license">License</a>
   </p>
 </div>
 
@@ -31,78 +40,52 @@
 
 **PrepGenius** is a state-of-the-art, full‑stack AI interview preparation platform designed to bridge the gap between candidate skills and industry requirements. By leveraging **Local LLMs (via Ollama)** and **OpenAI**, PrepGenius provides a private, secure, and highly personalized environment for mock interviews, resume optimization, and skill-gap analysis.
 
-### 🌟 Why PrepGenius?
-- **Privacy First:** Support for local AI models ensures your career data never leaves your machine.
-- **Adaptive Learning:** Tailored roadmaps that evolve with your progress.
-- **Realistic Practice:** Advanced coding editor and domain-specific rubric evaluations.
-
 <div align="center">
-  <table>
-    <tr>
-      <td align="center"><img src="https://skillicons.dev/icons?i=react" width="40" alt="React"/><br/><b>React</b></td>
-      <td align="center"><img src="https://skillicons.dev/icons?i=vite" width="40" alt="Vite"/><br/><b>Vite</b></td>
-      <td align="center"><img src="https://skillicons.dev/icons?i=nodejs" width="40" alt="Node"/><br/><b>Node.js</b></td>
-      <td align="center"><img src="https://skillicons.dev/icons?i=express" width="40" alt="Express"/><br/><b>Express</b></td>
-      <td align="center"><img src="https://skillicons.dev/icons?i=tailwind" width="40" alt="Tailwind"/><br/><b>Tailwind</b></td>
-      <td align="center"><img src="https://skillicons.dev/icons?i=threejs" width="40" alt="Three.js"/><br/><b>Three.js</b></td>
-    </tr>
-  </table>
+  <img src="https://skillicons.dev/icons?i=react,vite,ts,tailwind,nodejs,express,threejs,github,figma,postman" />
 </div>
 
 <hr />
 
 ## ✨ Features
 
-<table width="100%">
-  <tr>
-    <td width="30%" align="center">
-      <b>🎙️ AI Mock Interviews</b>
-    </td>
-    <td width="70%">
-      Practice technical and behavioral interviews with domain-specific rubrics. Receive granular feedback on accuracy, communication, and technical depth.
-    </td>
-  </tr>
-  <tr>
-    <td width="30%" align="center">
-      <b>📄 ATS Resume Analyzer</b>
-    </td>
-    <td width="70%">
-      Upload your resume for an AI-powered deep dive. Identify missing keywords, ATS scores, and actionable improvements to stand out to recruiters.
-    </td>
-  </tr>
-  <tr>
-    <td width="30%" align="center">
-      <b>🗺️ Dynamic Roadmaps</b>
-    </td>
-    <td width="70%">
-      Generate personalized weekly learning plans based on your current skill level and target job role. Track progress from "Novice" to "Expert."
-    </td>
-  </tr>
-  <tr>
-    <td width="30%" align="center">
-      <b>💻 Interactive Coding Arena</b>
-    </td>
-    <td width="70%">
-      A high-performance IDE built with React, supporting multiple languages, test cases, and AI-driven hints when you get stuck.
-    </td>
-  </tr>
-  <tr>
-    <td width="30%" align="center">
-      <b>📊 Career Analytics</b>
-    </td>
-    <td width="70%">
-      Visualize your strengths and weaknesses through beautiful Recharts-powered dashboards. Monitor trends across interview sessions.
-    </td>
-  </tr>
-  <tr>
-    <td width="30%" align="center">
-      <b>📚 Learning Hub</b>
-    </td>
-    <td width="70%">
-      Access a massive curriculum dataset with detailed definitions, examples, and practice questions across various domains.
-    </td>
-  </tr>
-</table>
+<div align="center">
+  <table width="100%">
+    <tr>
+      <td width="33%" align="center">
+        <img src="https://img.icons8.com/isometric/100/microphone.png" width="60" /><br/>
+        <b>AI Mock Interviews</b><br/>
+        Practice technical and behavioral interviews with domain-specific rubrics.
+      </td>
+      <td width="33%" align="center">
+        <img src="https://img.icons8.com/isometric/100/summary-list.png" width="60" /><br/>
+        <b>ATS Resume Analyzer</b><br/>
+        Upload your resume for deep-dive feedback and keyword optimization.
+      </td>
+      <td width="33%" align="center">
+        <img src="https://img.icons8.com/isometric/100/map.png" width="60" /><br/>
+        <b>Dynamic Roadmaps</b><br/>
+        Generate personalized weekly plans from Novice to Expert.
+      </td>
+    </tr>
+    <tr>
+      <td width="33%" align="center">
+        <img src="https://img.icons8.com/isometric/100/code.png" width="60" /><br/>
+        <b>Interactive Coding</b><br/>
+        High-performance IDE with AI hints and multi-language support.
+      </td>
+      <td width="33%" align="center">
+        <img src="https://img.icons8.com/isometric/100/line-chart.png" width="60" /><br/>
+        <b>Career Analytics</b><br/>
+        Visualize strengths and trends with interactive dashboards.
+      </td>
+      <td width="33%" align="center">
+        <img src="https://img.icons8.com/isometric/100/graduation-cap.png" width="60" /><br/>
+        <b>Learning Hub</b><br/>
+        Massive curriculum dataset for structured domain mastery.
+      </td>
+    </tr>
+  </table>
+</div>
 
 <hr />
 
@@ -138,39 +121,28 @@
 
 ### 🛠️ Installation
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/AthrvSharma/PrepGenius.git
-   cd PrepGenius
-   ```
+```bash
+# 1. Clone the repository
+git clone https://github.com/AthrvSharma/PrepGenius.git
+cd PrepGenius
 
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
+# 2. Install dependencies
+npm install
 
-3. **Configure Environment Variables:**
-   Create a `.env` file in the root directory:
-   ```env
-   OPENAI_API_KEY=your_key_here
-   OPENAI_BASE_URL=http://localhost:11434/v1 # For Ollama
-   OPENAI_MODEL=gpt-4-turbo # or llama3
-   VITE_AI_BASE_URL=http://localhost:8787
-   ```
+# 3. Configure .env
+cp .env.example .env
 
-4. **Initialize AI Server:**
-   ```bash
-   node server/index.js
-   ```
-
-5. **Start Frontend:**
-   ```bash
-   npm run dev
-   ```
+# 4. Initialize services
+node server/index.js # AI Server
+npm run dev          # Frontend
+```
 
 <hr />
 
 ## 📂 Project Structure
+
+<details>
+<summary><b>Click to expand folder tree</b></summary>
 
 ```bash
 PrepGenius/
@@ -188,6 +160,7 @@ PrepGenius/
 ├── tailwind.config.cjs # Styling configuration
 └── vite.config.ts      # Build configuration
 ```
+</details>
 
 <hr />
 
